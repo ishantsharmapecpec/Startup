@@ -1,9 +1,11 @@
+langchain
+langchain-community
+chromadb
 streamlit
 pdfplumber
 python-docx
-langchain
 openai
-chromadb
+
 
 
 
