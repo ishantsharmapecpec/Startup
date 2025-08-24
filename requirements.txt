@@ -1,10 +1,12 @@
+streamlit
 langchain
 langchain-community
-chromadb
-streamlit
-pdfplumber
-python-docx
 openai
+PyPDF2
+python-docx
+chromadb
+tiktoken
+
 
 
 
