@@ -1,8 +1,9 @@
 streamlit
-langchain
-openai
 pdfplumber
 python-docx
+langchain
+openai
 chromadb
+
 
 
