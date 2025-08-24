@@ -1,63 +1,64 @@
+# Install required packages (make sure to include in requirements.txt)
+# pip install streamlit langchain langchain-community openai PyPDF2 python-docx chromadb tiktoken
+
 import streamlit as st
-import pdfplumber
-from docx import Document
 from langchain.text_splitter import CharacterTextSplitter
-
-# Updated imports from langchain_community
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+from PyPDF2 import PdfReader
+import docx
 
-# --- Helper functions ---
-def pdf_to_text(pdf_file):
+# Function to extract text from PDF
+def pdf_to_text(file):
+    pdf = PdfReader(file)
     text = ""
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+    for page in pdf.pages:
+        text += page.extract_text() + "\n"
     return text
 
-def docx_to_text(docx_file):
-    doc = Document(docx_file)
+# Function to extract text from DOCX
+def docx_to_text(file):
+    doc = docx.Document(file)
     text = ""
     for para in doc.paragraphs:
         text += para.text + "\n"
     return text
 
-# --- Streamlit App ---
-st.title("GeoReport Q&A AI")
-st.write("Upload your geotechnical report (PDF or Word) and ask questions!")
+st.title("📄 Report Question Answering App")
 
-uploaded_file = st.file_uploader("Upload a report", type=["pdf", "docx"])
-api_key = st.text_input("Enter your OpenAI API Key:", type="password")
+# Upload file and provide OpenAI API key
+uploaded_file = st.file_uploader("Upload your PDF or DOCX report", type=["pdf", "docx"])
+api_key = st.text_input("Enter your OpenAI API Key", type="password")
 
 if uploaded_file and api_key:
-    # Convert file to text
-    if uploaded_file.type == "application/pdf":
-        text = pdf_to_text(uploaded_file)
-    else:
-        text = docx_to_text(uploaded_file)
+    if 'qa' not in st.session_state:
+        # Convert file to text
+        if uploaded_file.type == "application/pdf":
+            text = pdf_to_text(uploaded_file)
+        else:
+            text = docx_to_text(uploaded_file)
 
-    # Split text
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = text_splitter.split_text(text)
+        # Split text and create vector store
+        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        chunks = text_splitter.split_text(text)
+        embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+        vector_store = Chroma.from_texts(chunks, embedding=embeddings)
 
-    # Create embeddings and Chroma vector store
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
-    vector_store = Chroma.from_texts(chunks, embedding=embeddings)
+        # Create RetrievalQA chain and store in session state
+        qa = RetrievalQA.from_chain_type(
+            llm=ChatOpenAI(openai_api_key=api_key, model_name="gpt-4o-mini"),
+            chain_type="stuff",
+            retriever=vector_store.as_retriever()
+        )
+        st.session_state['qa'] = qa
+        st.success("✅ File processed! You can now ask questions.")
 
-    # Create retrieval-based Q&A
-    qa = RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(openai_api_key=api_key, model_name="gpt-4o-mini"),
-        chain_type="stuff",
-        retriever=vector_store.as_retriever()
-    )
-
-    # Ask questions
+# Ask questions only if QA object exists
+if 'qa' in st.session_state:
     question = st.text_input("Ask a question about the report:")
     if question:
         with st.spinner("Generating answer..."):
-            answer = qa.run(question)
+            answer = st.session_state['qa'].run(question)
         st.write("**Answer:**", answer)
