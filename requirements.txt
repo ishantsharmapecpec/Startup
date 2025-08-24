@@ -3,3 +3,4 @@ pdfplumber
 openai
 PyPDF2
 langchain
+python-docx
