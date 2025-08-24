@@ -1,6 +1,6 @@
 streamlit
 pdfplumber
 openai
-PyPDF2
-langchain
 python-docx
+langchain
+faiss-cpu
