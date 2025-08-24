@@ -2,7 +2,8 @@ import streamlit as st
 import pdfplumber
 from docx import Document
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores import FAISS
+from langchain.vectorstores import Chroma
+
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
@@ -43,7 +44,7 @@ if uploaded_file and api_key:
     
     # Create embeddings and FAISS vector store
     embeddings = OpenAIEmbeddings(openai_api_key=api_key)
-    vector_store = FAISS.from_texts(chunks, embeddings)
+    vector_store = Chroma.from_texts(chunks, embeddings)
     
     # Create retrieval-based Q&A
     qa = RetrievalQA.from_chain_type(
