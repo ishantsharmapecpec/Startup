@@ -1,6 +1,6 @@
 streamlit
-pdfplumber
-openai
-python-docx
 langchain
+openai
+pdfplumber
+python-docx
 faiss-cpu
