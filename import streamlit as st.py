@@ -8,7 +8,7 @@ from PyPDF2 import PdfReader
 import docx
 
 INDEX_DIR = "faiss_index"
-os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
+os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"  # prevent Linux watch errors
 
 # -------- Helpers --------
 def pdf_to_text(file):
@@ -20,7 +20,7 @@ def docx_to_text(file):
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
 def together_generate(question, context, api_key, model="mistralai/Mistral-7B-Instruct-v0.1"):
-    """Call Together.AI API for text generation"""
+    """Call Together.AI API for text generation (remote only)"""
     url = "https://api.together.xyz/inference"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
@@ -37,7 +37,7 @@ def together_generate(question, context, api_key, model="mistralai/Mistral-7B-In
         if "output" in result and "choices" in result["output"]:
             return result["output"]["choices"][0]["text"].strip()
         else:
-            return f"⚠️ Unexpected response format: {result}"
+            return f"⚠️ Unexpected response: {result}"
     except Exception as e:
         return f"❌ Together API error: {repr(e)}"
 
@@ -46,13 +46,14 @@ st.title("📂 Project Q&A (FAISS + Together.AI)")
 
 api_key = st.text_input("Enter your Together.AI API Key", type="password")
 
-# ✅ Together-supported models (free tier)
+# Together-supported models (free tier)
 model_choice = st.selectbox(
     "Choose a Together.AI model:",
     [
         "mistralai/Mistral-7B-Instruct-v0.1",
         "togethercomputer/llama-2-7b-chat",
         "togethercomputer/llama-2-13b-chat",
+        "togethercomputer/llama-2-70b-chat",  # might need paid tier
     ],
     index=0
 )
@@ -69,7 +70,6 @@ if uploaded_files and api_key and st.button("Process & Save Index"):
         text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_text(text)
-
         all_chunks.extend(chunks)
         metadatas.extend([{"source": file.name}] * len(chunks))
 
