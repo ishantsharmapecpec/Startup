@@ -9,7 +9,7 @@ import docx
 
 INDEX_DIR = "faiss_index"
 
-# ---- Prevent inotify watch errors on Linux/Streamlit Cloud ----
+# ---- Prevent inotify watch errors ----
 os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
@@ -21,23 +21,37 @@ def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def hf_generate(question, context, hf_key, model="google/flan-t5-base"):
-    """Query Hugging Face Inference API only (no local model loading)."""
-    client = InferenceClient(model=model, token=hf_key)
-    prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
-    response = client.text_generation(
-        prompt,
-        max_new_tokens=256,
-        temperature=0.3,
-        do_sample=False,
-        return_full_text=False,
-    )
-    return response
+def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
+    """Query Hugging Face Inference API with error handling"""
+    try:
+        client = InferenceClient(model=model, token=hf_key)
+        prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+        response = client.text_generation(
+            prompt,
+            max_new_tokens=256,
+            temperature=0.3,
+            do_sample=False,
+            return_full_text=False,
+        )
+        return response
+    except Exception as e:
+        return f"❌ Hugging Face API error: {str(e)}"
 
 # -------- Streamlit UI --------
 st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
+
+# Model selection
+model_choice = st.selectbox(
+    "Choose a Hugging Face model:",
+    [
+        "google/flan-t5-small",   # ✅ safe default
+        "google/flan-t5-base",
+        "google/flan-t5-large",
+    ],
+    index=0
+)
 
 uploaded_files = st.file_uploader(
     "Upload one or more PDF/DOCX files (only needed once by admin)",
@@ -74,7 +88,7 @@ if os.path.exists(INDEX_DIR) and hf_key:
         context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("Thinking..."):
-            answer = hf_generate(query, context, hf_key, model="google/flan-t5-base")
+            answer = hf_generate(query, context, hf_key, model=model_choice)
 
         st.write("**Answer:**", answer)
 
