@@ -22,8 +22,8 @@ def docx_to_text(file):
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
 def hf_generate(question, context, hf_key, model="google/flan-t5-base"):
-    """Query Hugging Face Inference API directly"""
-    client = InferenceClient(model, token=hf_key)
+    """Use Hugging Face Inference API (remote, not local)"""
+    client = InferenceClient(model=model, token=hf_key)
     prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
     response = client.text_generation(prompt, max_new_tokens=512, temperature=0.3)
     return response
@@ -32,6 +32,17 @@ def hf_generate(question, context, hf_key, model="google/flan-t5-base"):
 st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
+
+# Model selection
+model_choice = st.selectbox(
+    "Choose a Hugging Face model:",
+    [
+        "google/flan-t5-base",
+        "google/flan-t5-large",
+        "google/flan-ul2",
+    ],
+    index=0
+)
 
 uploaded_files = st.file_uploader(
     "Upload one or more PDF/DOCX files (only needed once by admin)",
@@ -68,7 +79,7 @@ if os.path.exists(INDEX_DIR) and hf_key:
         context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("Thinking..."):
-            answer = hf_generate(query, context, hf_key)
+            answer = hf_generate(query, context, hf_key, model=model_choice)
 
         st.write("**Answer:**", answer)
 
