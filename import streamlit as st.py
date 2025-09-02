@@ -26,6 +26,7 @@ def file_hash(file_bytes):
     return hashlib.md5(file_bytes).hexdigest()
 
 def mistral_generate(question, context, api_key, model="mistral-small-latest"):
+    """Call Mistral official API"""
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     messages = [
@@ -54,23 +55,27 @@ def save_metadata(data):
 # -------- Streamlit UI --------
 st.set_page_config(page_title="Geos Chatbot", page_icon="🌍", layout="wide")
 
-# 🎨 Custom CSS for wallpaper and styling
+# 🎨 Styling with geotechnical wallpaper
 st.markdown("""
     <style>
     .stApp {
-        background-image: url("https://images.unsplash.com/photo-1534081333815-ae5019106622?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80");
+        background-image: url("https://images.unsplash.com/photo-1501854140801-50d01698950b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80");
         background-size: cover;
         background-attachment: fixed;
     }
     .block-container {
-        background-color: rgba(255, 255, 255, 0.85);
+        background-color: rgba(255, 255, 255, 0.92);
         padding: 2rem;
         border-radius: 12px;
+        box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
     }
     h1 {
         text-align: center;
-        color: #003366;
+        color: #00264d;
         font-weight: 900;
+    }
+    h2, h3, label {
+        color: #003366 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -78,68 +83,80 @@ st.markdown("""
 st.title("🌍 Geos Chatbot")
 st.markdown("Your intelligent assistant for **ground engineering reports**. Upload once, ask anytime!")
 
-api_key = st.text_input("🔑 Enter your Mistral API Key", type="password")
+# -------- Admin Mode --------
+admin_mode = False
+admin_password = st.sidebar.text_input("Admin Password (optional)", type="password")
 
-model_choice = st.selectbox(
-    "Choose a Mistral model:",
-    ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
-    index=0
-)
+if admin_password == os.environ.get("ADMIN_PASSWORD", "mysecret"):  
+    admin_mode = True
+    st.sidebar.success("✅ Admin mode enabled")
 
-uploaded_files = st.file_uploader(
-    "📂 Upload one or more PDF/DOCX reports",
-    type=["pdf", "docx"],
-    accept_multiple_files=True
-)
+# Use API key from environment
+api_key = os.environ.get("MISTRAL_API_KEY", "")
 
-if uploaded_files and api_key and st.button("⚡ Process & Update Index"):
-    processed_files = load_metadata()
-    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    if os.path.exists(INDEX_DIR):
-        vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
-    else:
-        vector_store = None
+if admin_mode:
+    st.subheader("⚙️ Admin Controls")
+    uploaded_files = st.file_uploader(
+        "📂 Upload one or more PDF/DOCX reports",
+        type=["pdf", "docx"],
+        accept_multiple_files=True
+    )
 
-    new_chunks, new_metas = [], []
-    updated = False
-
-    for file in uploaded_files:
-        file_bytes = file.read()
-        file.seek(0)
-        hash_val = file_hash(file_bytes)
-
-        if hash_val in processed_files.values():
-            st.warning(f"⚠️ Skipping already indexed file: {file.name}")
-            continue
-
-        text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = splitter.split_text(text)
-        new_chunks.extend(chunks)
-        new_metas.extend([{"source": file.name}] * len(chunks))
-
-        processed_files[file.name] = hash_val
-        updated = True
-
-    if updated:
-        if vector_store:
-            vector_store.add_texts(new_chunks, metadatas=new_metas)
+    if uploaded_files and api_key and st.button("⚡ Process & Update Index"):
+        processed_files = load_metadata()
+        embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        if os.path.exists(INDEX_DIR):
+            vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
         else:
-            vector_store = FAISS.from_texts(new_chunks, embeddings, metadatas=new_metas)
+            vector_store = None
 
-        vector_store.save_local(INDEX_DIR)
-        save_metadata(processed_files)
-        st.success("✅ Index updated successfully!")
-    else:
-        st.info("ℹ️ No new files to index.")
+        new_chunks, new_metas = [], []
+        updated = False
 
-# ---- Q&A ----
+        for file in uploaded_files:
+            file_bytes = file.read()
+            file.seek(0)
+            hash_val = file_hash(file_bytes)
+
+            if hash_val in processed_files.values():
+                st.warning(f"⚠️ Skipping already indexed file: {file.name}")
+                continue
+
+            text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            chunks = splitter.split_text(text)
+            new_chunks.extend(chunks)
+            new_metas.extend([{"source": file.name}] * len(chunks))
+
+            processed_files[file.name] = hash_val
+            updated = True
+
+        if updated:
+            if vector_store:
+                vector_store.add_texts(new_chunks, metadatas=new_metas)
+            else:
+                vector_store = FAISS.from_texts(new_chunks, embeddings, metadatas=new_metas)
+
+            vector_store.save_local(INDEX_DIR)
+            save_metadata(processed_files)
+            st.success("✅ Index updated successfully!")
+        else:
+            st.info("ℹ️ No new files to index.")
+
+# ---- User Mode (Q&A only) ----
 if os.path.exists(INDEX_DIR) and api_key:
-    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
+    st.subheader("💬 Ask a Question")
 
-    query = st.text_input("💬 Ask a question about your reports:")
+    model_choice = st.selectbox(
+        "Choose a Mistral model:",
+        ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
+        index=0
+    )
+
+    query = st.text_input("🔎 Type your question about the reports:")
     if query:
+        embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
         docs = retriever.get_relevant_documents(query)
         context = "\n".join([d.page_content for d in docs])
