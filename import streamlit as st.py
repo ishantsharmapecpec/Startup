@@ -22,7 +22,6 @@ def docx_to_text(file):
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
 def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
-    """Query Hugging Face Inference API with error handling"""
     try:
         client = InferenceClient(model=model, token=hf_key)
         prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
@@ -35,7 +34,8 @@ def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
         )
         return response
     except Exception as e:
-        return f"❌ Hugging Face API error: {str(e)}"
+        # show full error in Streamlit
+        return f"❌ Hugging Face API error: {repr(e)}"
 
 # -------- Streamlit UI --------
 st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
@@ -97,3 +97,4 @@ if os.path.exists(INDEX_DIR) and hf_key:
                 st.write(f"📌 {doc.metadata['source']}")
                 st.write(doc.page_content[:300] + "...")
                 st.write("---")
+
