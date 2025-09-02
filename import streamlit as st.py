@@ -57,11 +57,12 @@ if os.path.exists(INDEX_DIR) and hf_key:
 
         # ✅ Use HuggingFaceEndpoint (new stable way)
         llm = HuggingFaceEndpoint(
-            repo_id="mistralai/Mistral-7B-Instruct-v0.2",
+            repo_id="google/flan-t5-base",   # ✅ smaller model, runs on Hugging Face servers
             huggingfacehub_api_token=hf_key,
             temperature=0.3,
-            max_new_tokens=512,   # use max_new_tokens instead of max_length
+            max_new_tokens=256,
         )
+
 
         qa = RetrievalQA.from_chain_type(
             llm=llm, retriever=retriever, return_source_documents=True
@@ -77,3 +78,4 @@ if os.path.exists(INDEX_DIR) and hf_key:
                 st.write(f"📌 {doc.metadata['source']}")
                 st.write(doc.page_content[:300] + "...")
                 st.write("---")
+
