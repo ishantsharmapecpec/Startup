@@ -9,7 +9,7 @@ import docx
 
 INDEX_DIR = "faiss_index"
 
-# ---- Prevent inotify watch errors ----
+# ---- Prevent file watcher crash on Linux/Streamlit Cloud ----
 os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
@@ -22,6 +22,7 @@ def docx_to_text(file):
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
 def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
+    """Query Hugging Face Inference API with error handling"""
     try:
         client = InferenceClient(model=model, token=hf_key)
         prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
@@ -33,8 +34,9 @@ def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
             return_full_text=False,
         )
         return response
+    except StopIteration:
+        return f"❌ The model '{model}' is not available on Hugging Face’s free Inference API. Try 'google/flan-t5-small'."
     except Exception as e:
-        # show full error in Streamlit
         return f"❌ Hugging Face API error: {repr(e)}"
 
 # -------- Streamlit UI --------
@@ -42,13 +44,13 @@ st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
-# Model selection
+# ✅ Limit to models that work on free API
 model_choice = st.selectbox(
     "Choose a Hugging Face model:",
     [
-        "google/flan-t5-small",   # ✅ safe default
-        "google/flan-t5-base",
-        "google/flan-t5-large",
+        "google/flan-t5-small",   # ✅ safest
+        "google/flan-t5-base",    # ✅ usually works
+        "bigscience/bloomz-560m", # ✅ multilingual option
     ],
     index=0
 )
@@ -97,4 +99,3 @@ if os.path.exists(INDEX_DIR) and hf_key:
                 st.write(f"📌 {doc.metadata['source']}")
                 st.write(doc.page_content[:300] + "...")
                 st.write("---")
-
