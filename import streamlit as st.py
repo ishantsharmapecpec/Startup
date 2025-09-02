@@ -1,9 +1,9 @@
 import os
 import streamlit as st
+import requests
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import SentenceTransformerEmbeddings
-from huggingface_hub import InferenceClient
 from PyPDF2 import PdfReader
 import docx
 
@@ -21,21 +21,23 @@ def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def hf_generate(question, context, hf_key, model="google/flan-t5-small"):
-    """Query Hugging Face Inference API with error handling"""
+def hf_generate(question, context, hf_key, model="bigscience/bloomz-560m"):
+    """Query Hugging Face Inference API via HTTP"""
+    API_URL = f"https://api-inference.huggingface.co/models/{model}"
+    headers = {"Authorization": f"Bearer {hf_key}"}
+    prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+
     try:
-        client = InferenceClient(model=model, token=hf_key)
-        prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
-        response = client.text_generation(
-            prompt,
-            max_new_tokens=256,
-            temperature=0.3,
-            do_sample=False,
-            return_full_text=False,
-        )
-        return response
-    except StopIteration:
-        return f"❌ The model '{model}' is not available on Hugging Face’s free Inference API. Try 'google/flan-t5-small'."
+        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+        response.raise_for_status()
+        result = response.json()
+        # Hugging Face API sometimes returns a dict, sometimes a list
+        if isinstance(result, list) and "generated_text" in result[0]:
+            return result[0]["generated_text"]
+        elif isinstance(result, dict) and "error" in result:
+            return f"❌ Hugging Face API error: {result['error']}"
+        else:
+            return f"⚠️ Unexpected response format: {result}"
     except Exception as e:
         return f"❌ Hugging Face API error: {repr(e)}"
 
@@ -44,13 +46,13 @@ st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
-# ✅ Limit to models that work on free API
+# ✅ Limit to free models with Hosted Inference API
 model_choice = st.selectbox(
     "Choose a Hugging Face model:",
     [
-        "google/flan-t5-small",   # ✅ safest
-        "google/flan-t5-base",    # ✅ usually works
-        "bigscience/bloomz-560m", # ✅ multilingual option
+        "bigscience/bloomz-560m", # ✅ safe default
+        "google/flan-t5-base",    # may work (sometimes Pro-only)
+        "google/flan-t5-large",   # likely Pro-only
     ],
     index=0
 )
