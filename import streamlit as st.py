@@ -1,82 +1,61 @@
-# pip install -r requirements.txt
 import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_openai import ChatOpenAI
+from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.llms import Ollama
 from langchain.chains import RetrievalQA
 from PyPDF2 import PdfReader
-import docx
-import openai
+import docx, os
+
+INDEX_DIR = "faiss_index"
 
 # -------- Helpers --------
 def pdf_to_text(file):
     pdf = PdfReader(file)
-    text = ""
-    for i, page in enumerate(pdf.pages, start=1):
-        try:
-            text += f"\n--- Page {i} ---\n" + page.extract_text()
-        except:
-            pass
-    return text
+    return "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
 def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def make_qa(api_key, retriever, model="gpt-4o-mini"):
-    """Helper: build a QA chain for a given model"""
-    return RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(openai_api_key=api_key, model_name=model),
-        retriever=retriever,
-        return_source_documents=True
-    )
-
 # -------- Streamlit UI --------
-st.title("📂 Multi-Document Q&A (with Fallback)")
+st.title("📂 Offline Project Q&A (FAISS + Ollama)")
 
-api_key = st.text_input("Enter your OpenAI API Key", type="password")
 uploaded_files = st.file_uploader(
-    "Upload one or more PDF/DOCX files",
+    "Upload one or more PDF/DOCX files (only needed once)",
     type=["pdf", "docx"],
     accept_multiple_files=True
 )
 
-if uploaded_files and api_key and st.button("Process Files"):
+if uploaded_files and st.button("Process & Save Index"):
     all_chunks, metadatas = [], []
-
     for file in uploaded_files:
-        if file.type == "application/pdf":
-            text = pdf_to_text(file)
-        else:
-            text = docx_to_text(file)
-
+        text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_text(text)
 
         all_chunks.extend(chunks)
         metadatas.extend([{"source": file.name}] * len(chunks))
 
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
-    vector_store = FAISS.from_texts(all_chunks, embedding=embeddings, metadatas=metadatas)
+    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+    vector_store = FAISS.from_texts(all_chunks, embeddings, metadatas=metadatas)
 
-    st.session_state["vector_store"] = vector_store
-    st.success("✅ Documents processed! You can now ask questions.")
+    vector_store.save_local(INDEX_DIR)
+    st.success("✅ Knowledge base saved! You can now ask questions.")
 
-if "vector_store" in st.session_state:
+# ---- Q&A ----
+if os.path.exists(INDEX_DIR):
+    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+    vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
+
     query = st.text_input("Ask a question about your documents:")
     if query:
-        retriever = st.session_state["vector_store"].as_retriever(search_kwargs={"k": 3})
+        retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+        llm = Ollama(model="mistral")  # or "llama2"
+        qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=True)
 
-        try:
-            qa = make_qa(api_key, retriever, model="gpt-4o-mini")
-            with st.spinner("Answering with GPT-4o-mini..."):
-                result = qa(query)
-        except openai.error.RateLimitError:
-            st.warning("⚠️ Quota exceeded for GPT-4o-mini. Falling back to GPT-3.5-turbo.")
-            qa = make_qa(api_key, retriever, model="gpt-3.5-turbo")
-            with st.spinner("Answering with GPT-3.5-turbo..."):
-                result = qa(query)
+        with st.spinner("Thinking..."):
+            result = qa(query)
 
         st.write("**Answer:**", result["result"])
 
