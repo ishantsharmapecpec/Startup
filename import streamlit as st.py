@@ -1,13 +1,16 @@
+import os
 import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_community.llms import HuggingFaceEndpoint
-from langchain.chains import RetrievalQA
+from huggingface_hub import InferenceClient
 from PyPDF2 import PdfReader
-import docx, os
+import docx
 
 INDEX_DIR = "faiss_index"
+
+# ---- Prevent inotify watch errors (Linux/Streamlit Cloud) ----
+os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
 def pdf_to_text(file):
@@ -18,8 +21,15 @@ def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
+def hf_generate(question, context, hf_key, model="google/flan-t5-base"):
+    """Query Hugging Face Inference API directly"""
+    client = InferenceClient(model, token=hf_key)
+    prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+    response = client.text_generation(prompt, max_new_tokens=512, temperature=0.3)
+    return response
+
 # -------- Streamlit UI --------
-st.title("📂 Project Q&A (FAISS + Hugging Face)")
+st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
@@ -54,28 +64,16 @@ if os.path.exists(INDEX_DIR) and hf_key:
     query = st.text_input("Ask a question about your documents:")
     if query:
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-
-        # ✅ Use HuggingFaceEndpoint (new stable way)
-        llm = HuggingFaceEndpoint(
-            repo_id="google/flan-t5-base",   # ✅ smaller model, runs on Hugging Face servers
-            huggingfacehub_api_token=hf_key,
-            temperature=0.3,
-            max_new_tokens=256,
-        )
-
-
-        qa = RetrievalQA.from_chain_type(
-            llm=llm, retriever=retriever, return_source_documents=True
-        )
+        docs = retriever.get_relevant_documents(query)
+        context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("Thinking..."):
-            result = qa(query)
+            answer = hf_generate(query, context, hf_key)
 
-        st.write("**Answer:**", result["result"])
+        st.write("**Answer:**", answer)
 
         with st.expander("🔎 Sources"):
-            for doc in result["source_documents"]:
+            for doc in docs:
                 st.write(f"📌 {doc.metadata['source']}")
                 st.write(doc.page_content[:300] + "...")
                 st.write("---")
-
