@@ -45,13 +45,14 @@ st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
-# ✅ Only free / safe models
+# ✅ Only models that are known to work on free API
 model_choice = st.selectbox(
     "Choose a Hugging Face model:",
     [
-        "bigscience/bloomz-560m", # ✅ safe default
-        "google/flan-t5-base",
-        "google/flan-t5-small"
+        "bigscience/bloomz-560m",  # ✅ safe default
+        "bigscience/bloomz-1b1",
+        "distilgpt2",
+        "tiiuae/falcon-rw-1b",
     ],
     index=0
 )
