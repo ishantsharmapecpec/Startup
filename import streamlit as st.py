@@ -10,6 +10,27 @@ import docx
 INDEX_DIR = "faiss_index"
 os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"  # prevent Linux watch errors
 
+# -------- Custom Background + CSS --------
+def set_background():
+    st.markdown(
+        """
+        <style>
+        body {
+            background-color: #f5f7fa;
+        }
+        .stApp {
+            background-image: linear-gradient(to right, #eef2f3, #8e9eab);
+        }
+        .stTextInput > div > div > input {
+            background-color: #ffffff !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+set_background()
+
 # -------- Helpers --------
 def pdf_to_text(file):
     pdf = PdfReader(file)
@@ -44,39 +65,47 @@ def together_generate(question, context, api_key, model="mistralai/Mistral-7B-In
 # -------- Streamlit UI --------
 st.title("📂 Project Q&A (FAISS + Together.AI)")
 
+# Admin Password Protection
+admin_pass = st.text_input("Enter Admin Password to enable uploads", type="password")
+correct_admin_pass = "mysecret"  # 🔑 change this to your own password
+
 api_key = st.text_input("Enter your Together.AI API Key", type="password")
 
-# Together-supported models (free tier)
+# Together-supported models
 model_choice = st.selectbox(
     "Choose a Together.AI model:",
     [
         "mistralai/Mistral-7B-Instruct-v0.1",
         "togethercomputer/llama-2-7b-chat",
         "togethercomputer/llama-2-13b-chat",
-        "togethercomputer/llama-2-70b-chat",  # might need paid tier
+        "togethercomputer/llama-2-70b-chat",  # may require paid tier
     ],
     index=0
 )
 
-uploaded_files = st.file_uploader(
-    "Upload one or more PDF/DOCX files (only needed once by admin)",
-    type=["pdf", "docx"],
-    accept_multiple_files=True
-)
+# ---- File Upload (Admin Only) ----
+if admin_pass == correct_admin_pass:
+    uploaded_files = st.file_uploader(
+        "Upload one or more PDF/DOCX files (only needed once by admin)",
+        type=["pdf", "docx"],
+        accept_multiple_files=True
+    )
 
-if uploaded_files and api_key and st.button("Process & Save Index"):
-    all_chunks, metadatas = [], []
-    for file in uploaded_files:
-        text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = splitter.split_text(text)
-        all_chunks.extend(chunks)
-        metadatas.extend([{"source": file.name}] * len(chunks))
+    if uploaded_files and api_key and st.button("Process & Save Index"):
+        all_chunks, metadatas = [], []
+        for file in uploaded_files:
+            text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            chunks = splitter.split_text(text)
+            all_chunks.extend(chunks)
+            metadatas.extend([{"source": file.name}] * len(chunks))
 
-    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    vector_store = FAISS.from_texts(all_chunks, embeddings, metadatas=metadatas)
-    vector_store.save_local(INDEX_DIR)
-    st.success("✅ Knowledge base saved! You can now ask questions.")
+        embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        vector_store = FAISS.from_texts(all_chunks, embeddings, metadatas=metadatas)
+        vector_store.save_local(INDEX_DIR)
+        st.success("✅ Knowledge base saved! You can now ask questions.")
+else:
+    st.warning("🔒 Upload disabled: Enter the correct admin password to enable file uploads.")
 
 # ---- Q&A ----
 if os.path.exists(INDEX_DIR) and api_key:
