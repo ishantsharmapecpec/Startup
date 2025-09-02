@@ -8,7 +8,7 @@ from PyPDF2 import PdfReader
 import docx
 
 INDEX_DIR = "faiss_index"
-os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"  # prevent Linux watch errors
+os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
 def pdf_to_text(file):
@@ -19,41 +19,39 @@ def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def together_generate(question, context, api_key, model="mistralai/Mistral-7B-Instruct-v0.1"):
-    """Call Together.AI API for text generation (remote only)"""
-    url = "https://api.together.xyz/inference"
+def mistral_generate(question, context, api_key, model="mistral-small-latest"):
+    """Call Mistral official API"""
+    url = "https://api.mistral.ai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": f"Answer based on the context:\n\nContext:\n{context}\n\nQuestion: {question}"}
+    ]
     data = {
         "model": model,
-        "prompt": prompt,
-        "max_tokens": 512,
+        "messages": messages,
         "temperature": 0.3,
+        "max_tokens": 512,
     }
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         result = response.json()
-        if "output" in result and "choices" in result["output"]:
-            return result["output"]["choices"][0]["text"].strip()
-        else:
-            return f"⚠️ Unexpected response: {result}"
+        return result["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        return f"❌ Together API error: {repr(e)}"
+        return f"❌ Mistral API error: {repr(e)}"
 
 # -------- Streamlit UI --------
-st.title("📂 Project Q&A (FAISS + Together.AI)")
+st.title("📂 Project Q&A (FAISS + Mistral AI)")
 
-api_key = st.text_input("Enter your Together.AI API Key", type="password")
+api_key = st.text_input("Enter your Mistral API Key", type="password")
 
-# Together-supported models (free tier)
 model_choice = st.selectbox(
-    "Choose a Together.AI model:",
+    "Choose a Mistral model:",
     [
-        "mistralai/Mistral-7B-Instruct-v0.1",
-        "togethercomputer/llama-2-7b-chat",
-        "togethercomputer/llama-2-13b-chat",
-        "togethercomputer/llama-2-70b-chat",  # might need paid tier
+        "mistral-small-latest",   # fast, cheaper
+        "mistral-medium-latest",  # balanced
+        "mistral-large-latest",   # best quality
     ],
     index=0
 )
@@ -92,7 +90,7 @@ if os.path.exists(INDEX_DIR) and api_key:
         context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("Thinking..."):
-            answer = together_generate(query, context, api_key, model=model_choice)
+            answer = mistral_generate(query, context, api_key, model=model_choice)
 
         st.write("**Answer:**", answer)
 
