@@ -9,7 +9,7 @@ import docx
 
 INDEX_DIR = "faiss_index"
 
-# ---- Prevent file watcher crash on Linux/Streamlit Cloud ----
+# ---- Prevent file watcher crash ----
 os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
@@ -31,7 +31,6 @@ def hf_generate(question, context, hf_key, model="bigscience/bloomz-560m"):
         response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
         response.raise_for_status()
         result = response.json()
-        # Hugging Face API sometimes returns a dict, sometimes a list
         if isinstance(result, list) and "generated_text" in result[0]:
             return result[0]["generated_text"]
         elif isinstance(result, dict) and "error" in result:
@@ -46,13 +45,13 @@ st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
 
 hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
-# ✅ Limit to free models with Hosted Inference API
+# ✅ Only free / safe models
 model_choice = st.selectbox(
     "Choose a Hugging Face model:",
     [
         "bigscience/bloomz-560m", # ✅ safe default
-        "google/flan-t5-base",    # may work (sometimes Pro-only)
-        "google/flan-t5-large",   # likely Pro-only
+        "google/flan-t5-base",
+        "google/flan-t5-small"
     ],
     index=0
 )
