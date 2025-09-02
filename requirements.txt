@@ -1,13 +1,9 @@
 streamlit
 langchain
 langchain-community
+langchain-openai
 openai
 PyPDF2
 python-docx
-chromadb
+faiss-cpu
 tiktoken
-
-
-
-
-
