@@ -3,7 +3,6 @@ langchain
 langchain-community
 sentence-transformers
 faiss-cpu
-huggingface-hub>=0.20.3
+requests
 PyPDF2
 python-docx
-requests
