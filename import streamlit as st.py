@@ -44,12 +44,12 @@ def mistral_generate(question, context, api_key, model="mistral-small-latest"):
     except requests.exceptions.HTTPError as e:
         if response.status_code == 429:
             return "RATE_LIMIT"
-        return f"❌ Mistral API error: {repr(e)}"
+        return f"❌ Mistral API error: {response.text}"
     except Exception as e:
         return f"❌ Mistral API error: {repr(e)}"
 
-def groq_generate(question, context, api_key, model="mixtral-8x7b-32768"):
-    """Fallback: Call Groq API (free tier supports Mixtral, LLaMA-2)"""
+def groq_generate(question, context, api_key, model="llama2-70b-4096"):
+    """Fallback: Call Groq API"""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     messages = [
@@ -63,7 +63,7 @@ def groq_generate(question, context, api_key, model="mixtral-8x7b-32768"):
         result = response.json()
         return result["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        return f"❌ Groq API error: {repr(e)}"
+        return f"❌ Groq API error: {response.text if 'response' in locals() else repr(e)}"
 
 # -------- Metadata Management --------
 def load_metadata():
@@ -192,7 +192,7 @@ if os.path.exists(INDEX_DIR) and (mistral_key or groq_key):
             if answer == "RATE_LIMIT" and groq_key:
                 st.warning("⚠️ Mistral API rate limit reached. Switching to Groq...")
                 time.sleep(1)
-                answer = groq_generate(query, context, groq_key)
+                answer = groq_generate(query, context, groq_key, model="llama2-70b-4096")
 
         st.subheader("📌 Answer")
         st.write(answer)
