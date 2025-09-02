@@ -2,7 +2,7 @@ import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_community.llms import Ollama
+from langchain_community.llms import HuggingFaceHub
 from langchain.chains import RetrievalQA
 from PyPDF2 import PdfReader
 import docx, os
@@ -19,15 +19,17 @@ def docx_to_text(file):
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
 # -------- Streamlit UI --------
-st.title("📂 Offline Project Q&A (FAISS + Ollama)")
+st.title("📂 Project Q&A (FAISS + Hugging Face)")
+
+hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
 
 uploaded_files = st.file_uploader(
-    "Upload one or more PDF/DOCX files (only needed once)",
+    "Upload one or more PDF/DOCX files (only needed once by admin)",
     type=["pdf", "docx"],
     accept_multiple_files=True
 )
 
-if uploaded_files and st.button("Process & Save Index"):
+if uploaded_files and hf_key and st.button("Process & Save Index"):
     all_chunks, metadatas = [], []
     for file in uploaded_files:
         text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
@@ -39,19 +41,25 @@ if uploaded_files and st.button("Process & Save Index"):
 
     embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
     vector_store = FAISS.from_texts(all_chunks, embeddings, metadatas=metadatas)
-
     vector_store.save_local(INDEX_DIR)
     st.success("✅ Knowledge base saved! You can now ask questions.")
 
 # ---- Q&A ----
-if os.path.exists(INDEX_DIR):
+if os.path.exists(INDEX_DIR) and hf_key:
     embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
     vector_store = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
 
     query = st.text_input("Ask a question about your documents:")
     if query:
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-        llm = Ollama(model="mistral")  # or "llama2"
+        
+        # Use Hugging Face hosted model (Mistral)
+        llm = HuggingFaceHub(
+            repo_id="mistralai/Mistral-7B-Instruct-v0.2",
+            huggingfacehub_api_token=hf_key,
+            model_kwargs={"temperature":0.3, "max_length":512}
+        )
+
         qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=True)
 
         with st.spinner("Thinking..."):
