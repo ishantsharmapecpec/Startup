@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import time
 import streamlit as st
 import requests
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -25,6 +26,7 @@ def docx_to_text(file):
 def file_hash(file_bytes):
     return hashlib.md5(file_bytes).hexdigest()
 
+# -------- LLM API Calls --------
 def mistral_generate(question, context, api_key, model="mistral-small-latest"):
     """Call Mistral official API"""
     url = "https://api.mistral.ai/v1/chat/completions"
@@ -39,9 +41,31 @@ def mistral_generate(question, context, api_key, model="mistral-small-latest"):
         response.raise_for_status()
         result = response.json()
         return result["choices"][0]["message"]["content"].strip()
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 429:
+            return "RATE_LIMIT"
+        return f"❌ Mistral API error: {repr(e)}"
     except Exception as e:
         return f"❌ Mistral API error: {repr(e)}"
 
+def groq_generate(question, context, api_key, model="mixtral-8x7b-32768"):
+    """Fallback: Call Groq API (free tier supports Mixtral, LLaMA-2)"""
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    messages = [
+        {"role": "system", "content": "You are Geos Chatbot, a professional assistant for ground engineering reports."},
+        {"role": "user", "content": f"Answer based on the context:\n\nContext:\n{context}\n\nQuestion: {question}"}
+    ]
+    data = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 512}
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return f"❌ Groq API error: {repr(e)}"
+
+# -------- Metadata Management --------
 def load_metadata():
     if os.path.exists(METADATA_FILE):
         with open(METADATA_FILE, "r") as f:
@@ -87,12 +111,13 @@ st.markdown("Your intelligent assistant for **ground engineering reports**. Uplo
 admin_mode = False
 admin_password = st.sidebar.text_input("Admin Password (optional)", type="password")
 
-if admin_password == os.environ.get("ADMIN_PASSWORD", "mysecret"):  
+if "ADMIN_PASSWORD" in st.secrets and admin_password == st.secrets["ADMIN_PASSWORD"]:
     admin_mode = True
     st.sidebar.success("✅ Admin mode enabled")
 
-# Use API key from environment
-api_key = os.environ.get("MISTRAL_API_KEY", "")
+# Load API keys from secrets
+mistral_key = st.secrets.get("MISTRAL_API_KEY", "")
+groq_key = st.secrets.get("GROQ_API_KEY", "")
 
 if admin_mode:
     st.subheader("⚙️ Admin Controls")
@@ -102,7 +127,7 @@ if admin_mode:
         accept_multiple_files=True
     )
 
-    if uploaded_files and api_key and st.button("⚡ Process & Update Index"):
+    if uploaded_files and mistral_key and st.button("⚡ Process & Update Index"):
         processed_files = load_metadata()
         embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
         if os.path.exists(INDEX_DIR):
@@ -144,7 +169,7 @@ if admin_mode:
             st.info("ℹ️ No new files to index.")
 
 # ---- User Mode (Q&A only) ----
-if os.path.exists(INDEX_DIR) and api_key:
+if os.path.exists(INDEX_DIR) and (mistral_key or groq_key):
     st.subheader("💬 Ask a Question")
 
     model_choice = st.selectbox(
@@ -162,7 +187,12 @@ if os.path.exists(INDEX_DIR) and api_key:
         context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("🤔 Thinking..."):
-            answer = mistral_generate(query, context, api_key, model=model_choice)
+            answer = mistral_generate(query, context, mistral_key, model=model_choice)
+
+            if answer == "RATE_LIMIT" and groq_key:
+                st.warning("⚠️ Mistral API rate limit reached. Switching to Groq...")
+                time.sleep(1)
+                answer = groq_generate(query, context, groq_key)
 
         st.subheader("📌 Answer")
         st.write(answer)
