@@ -8,51 +8,51 @@ from PyPDF2 import PdfReader
 import docx
 
 INDEX_DIR = "faiss_index"
-
-# ---- Prevent file watcher crash ----
 os.environ["STREAMLIT_SERVER_FILEWATCHERTYPE"] = "none"
 
 # -------- Helpers --------
 def pdf_to_text(file):
     pdf = PdfReader(file)
-    return "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
+    return "\n".join([p.extract_text() for p in pdf.pages if p.extract_text()])
 
 def docx_to_text(file):
     doc = docx.Document(file)
     return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def hf_generate(question, context, hf_key, model="bigscience/bloomz-560m"):
-    """Query Hugging Face Inference API via HTTP"""
-    API_URL = f"https://api-inference.huggingface.co/models/{model}"
-    headers = {"Authorization": f"Bearer {hf_key}"}
+def together_generate(question, context, api_key, model="mistralai/Mistral-7B-Instruct-v0.1"):
+    """Call Together.AI API for text generation"""
+    url = "https://api.together.xyz/inference"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     prompt = f"Answer the question based on the context:\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
-
+    data = {
+        "model": model,
+        "prompt": prompt,
+        "max_tokens": 512,
+        "temperature": 0.3,
+    }
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+        response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         result = response.json()
-        if isinstance(result, list) and "generated_text" in result[0]:
-            return result[0]["generated_text"]
-        elif isinstance(result, dict) and "error" in result:
-            return f"❌ Hugging Face API error: {result['error']}"
+        if "output" in result and "choices" in result["output"]:
+            return result["output"]["choices"][0]["text"].strip()
         else:
             return f"⚠️ Unexpected response format: {result}"
     except Exception as e:
-        return f"❌ Hugging Face API error: {repr(e)}"
+        return f"❌ Together API error: {repr(e)}"
 
 # -------- Streamlit UI --------
-st.title("📂 Project Q&A (FAISS + Hugging Face Inference API)")
+st.title("📂 Project Q&A (FAISS + Together.AI)")
 
-hf_key = st.text_input("Enter your Hugging Face API Key", type="password")
+api_key = st.text_input("Enter your Together.AI API Key", type="password")
 
-# ✅ Only models that are known to work on free API
+# ✅ Together-supported models (free tier)
 model_choice = st.selectbox(
-    "Choose a Hugging Face model:",
+    "Choose a Together.AI model:",
     [
-        "bigscience/bloomz-560m",  # ✅ safe default
-        "bigscience/bloomz-1b1",
-        "distilgpt2",
-        "tiiuae/falcon-rw-1b",
+        "mistralai/Mistral-7B-Instruct-v0.1",
+        "togethercomputer/llama-2-7b-chat",
+        "togethercomputer/llama-2-13b-chat",
     ],
     index=0
 )
@@ -63,7 +63,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-if uploaded_files and hf_key and st.button("Process & Save Index"):
+if uploaded_files and api_key and st.button("Process & Save Index"):
     all_chunks, metadatas = [], []
     for file in uploaded_files:
         text = pdf_to_text(file) if file.type == "application/pdf" else docx_to_text(file)
@@ -79,7 +79,7 @@ if uploaded_files and hf_key and st.button("Process & Save Index"):
     st.success("✅ Knowledge base saved! You can now ask questions.")
 
 # ---- Q&A ----
-if os.path.exists(INDEX_DIR) and hf_key:
+if os.path.exists(INDEX_DIR) and api_key:
     embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
     vector_store = FAISS.load_local(
         INDEX_DIR, embeddings, allow_dangerous_deserialization=True
@@ -92,7 +92,7 @@ if os.path.exists(INDEX_DIR) and hf_key:
         context = "\n".join([d.page_content for d in docs])
 
         with st.spinner("Thinking..."):
-            answer = hf_generate(query, context, hf_key, model=model_choice)
+            answer = together_generate(query, context, api_key, model=model_choice)
 
         st.write("**Answer:**", answer)
 
