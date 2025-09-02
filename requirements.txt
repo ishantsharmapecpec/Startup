@@ -6,4 +6,4 @@ faiss-cpu
 huggingface-hub>=0.20.3
 PyPDF2
 python-docx
-
+requests
