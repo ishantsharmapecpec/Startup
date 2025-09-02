@@ -85,7 +85,7 @@ st.markdown("Your intelligent assistant for **ground engineering reports**. Uplo
 
 # -------- Admin Mode --------
 admin_mode = False
-admin_password = st.sidebar.text_input("Admin Password (optional)", type="password")
+admin_password = st.sidebar.text_input("1234", type="password")
 
 if admin_password == os.environ.get("ADMIN_PASSWORD", "mysecret"):  
     admin_mode = True
@@ -172,3 +172,4 @@ if os.path.exists(INDEX_DIR) and api_key:
                 st.write(f"📎 {doc.metadata['source']}")
                 st.write(doc.page_content[:300] + "...")
                 st.write("---")
+
