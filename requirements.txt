@@ -6,7 +6,3 @@ faiss-cpu
 requests
 PyPDF2
 python-docx
-
-
-
-
